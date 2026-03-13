@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forno Inteligente - IHM Premium</title>
+<style>
+    body{
+        background:#1c1c1c;
+        display:flex;
+        justify-content:center;
+        align-items:center;
+        height:110vh;
+        font-family:'Segoe UI',sans-serif;
+    }
+
+    .painel{
+        width:320px;
+        height:640px;
+        background:linear-gradient(180deg,#0a0a0a,#111);
+        border-radius:28px;
+        box-shadow:0 0 60px rgba(0,0,0,0.9);
+        border:2px solid #2b2b2b;
+        padding:20px;
+        color:white;
+        display:flex;
+        flex-direction:column;
+        justify-content:space-between;
+    }
+
+    #display{
+        text-align:center;
+        margin-bottom:60px;
+    }
+
+    .temperatura{
+        font-size:70px;
+        font-weight:200;
+        text-shadow:0 0 25px rgba(255,122,0,0.7);
+    }
+
+    .status{
+        font-size:14px;
+        margin-top:5px;
+    }
+
+    button{
+        width:100%;
+        padding:8px;
+        border:none;
+        border-radius:8px;
+        margin-bottom:6px;
+        background:#2e2e2e;
+        color:white;
+        cursor:pointer;
+        font-size:14px;
+    }
+
+    button:hover{
+        background:#444;
+    }
+
+    button:disabled{
+        background:#1a1a1a;
+        color:#555;
+        cursor:not-allowed;
+    }
+
+    input,select{
+        width:100%;
+        padding:6px;
+        border-radius:6px;
+        border:none;
+        background:#1f1f1f;
+        color:white;
+        margin-bottom:6px;
+        font-size:14px;
+    }
+
+    .hidden{
+        display:none;
+    }
+
+    .power{
+        text-align:center;
+        font-size:26px;
+        cursor:pointer;
+        color:#555;
+        transition:0.3s;
+    }
+
+    .power.on{
+        color:#ffeede;
+        text-shadow:0 0 20px rgba(255,255,255,0.8);
+    }
+
+    .log{
+        background:black;
+        height:90px;
+        overflow-y:auto;
+        padding:6px;
+        font-size:11px;
+        border-radius:10px;
+        box-shadow: inset 0 0 12px rgba(255,243,231,0.5);
+        margin-top:8px;
+    }
+</style>
+</head>
+
+<body>
+<div class="painel">
+    <div>
+        <div id="display" class="hidden">
+            <div class="temperatura" id="tempDisplay">25°</div>
+            <div class="status" id="statusDisplay">Standby</div>
+        </div>
+
+        <div id="buttonControls" class="hidden">
+            <button onclick="ativarManual()">Modo Manual</button>
+            <button onclick="ativarAuto()">Modo Automático</button>
+            <button onclick="ativarDescongelar()">Descongelar</button>
+        </div>
+
+        <div id="manualControls" class="hidden">
+            <input type="number" id="tempInput" placeholder="Temperatura (80-200)">
+            <input type="number" id="tempoInput" placeholder="Tempo (s)">
+            <button id="startManual" onclick="modoManual()" disabled>Iniciar Manual</button>
+        </div>
+
+        <div id="autoControls" class="hidden">
+            <select id="pontoSelect">
+                <option value="45">Mal passado</option>
+                <option value="65">Ao ponto</option>
+                <option value="80">Bem passado</option>
+            </select>
+            <button onclick="modoAuto()">Iniciar Automático</button>
+        </div>
+
+        <div id="descongelarControls" class="hidden">
+            <button onclick="modoDescongelar()">Iniciar Descongelar</button>
+        </div>
+    </div>
+
+    <div>
+        <div class="power" id="powerBtn" onclick="togglePower()">⏻</div>
+        <div class="log" id="log"></div>
+    </div>
+</div>
+
+<script>
+
+let temperaturaAtual = 25
+let temperaturaAlvo = 0
+let indiceMaillard = 0
+let pontoIdeal = 65
+let limiteQueima = 90
+let intervaloCaptura = 20
+
+let ligado = false
+let intervalo
+let tempoTotal = 0
+
+/* UTIL */
+
+function atualizarDisplay(){
+    document.getElementById("tempDisplay").innerText =
+    temperaturaAtual.toFixed(1)+"°"
+}
+
+function atualizarStatus(msg){
+    document.getElementById("statusDisplay").innerText = msg
+}
+
+function log(msg){
+    let logDiv = document.getElementById("log")
+    logDiv.innerHTML += msg+"<br>"
+    logDiv.scrollTop = logDiv.scrollHeight
+}
+
+function esconderTodosControles(){
+    document.getElementById("buttonControls").classList.add("hidden")
+    document.getElementById("manualControls").classList.add("hidden")
+    document.getElementById("autoControls").classList.add("hidden")
+    document.getElementById("descongelarControls").classList.add("hidden")
+}
+
+/* POWER */
+
+function togglePower(){
+    if(ligado){
+        desligar()
+    }else{
+        ligar()
+    }
+}
+
+function ligar(){
+    ligado = true
+
+    temperaturaAtual = 25
+    temperaturaAlvo = 0
+    tempoTotal = 0
+
+    clearInterval(intervalo)
+
+    document.getElementById("powerBtn").classList.add("on")
+    document.getElementById("display").classList.remove("hidden")
+    document.getElementById("buttonControls").classList.remove("hidden")
+
+    atualizarDisplay()
+    atualizarStatus("Sistema Ativo")
+
+    log("================FRYMASTER=================")
+}
+
+function desligar(){
+    parar()
+
+    ligado = false
+
+    esconderTodosControles()
+
+    document.getElementById("display").classList.add("hidden")
+    document.getElementById("powerBtn").classList.remove("on")
+
+    document.getElementById("log").innerHTML=""
+}
+
+function parar(){
+    clearInterval(intervalo)
+
+    temperaturaAlvo = 0
+    tempoTotal = 0
+
+    atualizarStatus("Processo interrompido")
+    log("Processo parado.")
+}
+
+/* CONTROLES */
+
+function ativarManual(){
+    if(!ligado) return
+    esconderTodosControles()
+
+    document.getElementById("buttonControls").classList.remove("hidden")
+    document.getElementById("manualControls").classList.remove("hidden")
+}
+
+function ativarAuto(){
+    if(!ligado) return
+
+    esconderTodosControles()
+
+    document.getElementById("buttonControls").classList.remove("hidden")
+    document.getElementById("autoControls").classList.remove("hidden")
+}
+
+function ativarDescongelar(){
+    if(!ligado) return
+
+    esconderTodosControles()
+
+    document.getElementById("buttonControls").classList.remove("hidden")
+    document.getElementById("descongelarControls").classList.remove("hidden")
+}
+
+/* TEMPERATURA */
+
+function atualizarTemperatura(){
+    if(temperaturaAtual < temperaturaAlvo){
+        temperaturaAtual += 2
+    }else{
+        temperaturaAtual -= 0.3
+    }
+}
+
+/* VALIDAÇÃO MANUAL */
+
+document.getElementById("tempInput").addEventListener("input",validarManual)
+document.getElementById("tempoInput").addEventListener("input",validarManual)
+
+function validarManual(){
+
+let temp = document.getElementById("tempInput").value
+let tempo = document.getElementById("tempoInput").value
+
+if(temp !== "" && tempo !== ""){
+    document.getElementById("startManual").disabled = false
+}else{
+    document.getElementById("startManual").disabled = true
+}
+
+}
+
+/* MODO MANUAL */
+
+function modoManual(){
+    if(!ligado) return
+
+    let temp = parseFloat(document.getElementById("tempInput").value)
+    let tempo = parseInt(document.getElementById("tempoInput").value)
+
+    if(isNaN(temp) || isNaN(tempo)){
+        atualizarStatus("Defina Temp e Tempo")
+        log("Erro de parâmetros")
+        return
+    }
+
+    if(temp < 80 || temp > 200){
+        atualizarStatus("Temp inválida")
+        log("Temperatura fora da faixa")
+        return
+    }
+
+    if(tempo <= 0){
+        atualizarStatus("Tempo inválido")
+        log("Tempo inválido")
+        return
+    }
+
+    temperaturaAlvo = temp
+    tempoTotal = 0
+
+    atualizarStatus("Manual Ativo")
+    log("Modo manual iniciado")
+
+    clearInterval(intervalo)
+
+    intervalo = setInterval(()=>{
+
+    if(tempoTotal >= tempo || !ligado){
+        log("Ciclo finalizado")
+        parar()
+        return
+    }
+
+    atualizarTemperatura()
+    tempoTotal++
+
+    atualizarDisplay()
+    },200)
+}
+
+/* MODO AUTOMÁTICO */
+
+function modoAuto(){
+    if(!ligado) return
+
+    temperaturaAlvo = 180
+    pontoIdeal = parseInt(document.getElementById("pontoSelect").value)
+
+    indiceMaillard = 0
+    tempoTotal = 0
+
+    atualizarStatus("Automático Ativo")
+    log("Modo automático iniciado")
+
+    clearInterval(intervalo)
+
+    intervalo = setInterval(()=>{
+
+    atualizarTemperatura()
+    tempoTotal++
+
+    atualizarDisplay()
+
+    if(tempoTotal % intervaloCaptura === 0){
+
+    indiceMaillard += Math.random()*8
+
+    if(indiceMaillard >= limiteQueima){
+        log("Risco de queima detectado")
+        parar()
+        return
+    }
+
+    if(indiceMaillard >= pontoIdeal){
+        log("Ponto ideal atingido")
+        parar()
+        return
+    }
+    }
+    },200)
+}
+
+/* DESCONGELAR */
+
+function modoDescongelar(){
+    if(!ligado) return
+
+    temperaturaAlvo = 45
+    tempoTotal = 0
+
+    let tempoMaximo = 60
+
+    atualizarStatus("Descongelando")
+    log("Modo descongelar iniciado")
+
+    clearInterval(intervalo)
+
+    intervalo = setInterval(()=>{
+
+    if(temperaturaAtual < temperaturaAlvo){
+        temperaturaAtual += 1
+    }else{
+        temperaturaAtual -= 0.2
+    }
+
+    tempoTotal++
+
+    atualizarDisplay()
+
+    if(tempoTotal >= tempoMaximo){
+        log("Descongelamento concluído")
+        parar()
+    }
+    },300)
+}
+</script>
+</body>
+</html>
